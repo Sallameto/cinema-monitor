@@ -13,7 +13,7 @@ PAGES = {
     "home": BASE,
     "coming_soon": urljoin(BASE, "next_releasing"),
 }
-TARGET = "heart of the beast"
+TARGET = "avengers doomsday"
 STATE_FILE = Path("state.json")
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
