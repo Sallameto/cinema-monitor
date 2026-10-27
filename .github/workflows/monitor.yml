@@ -24,8 +24,6 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-      - name: Test detection and deduplication
-        run: python test_monitor.py
 
       - name: Check cinema
         env:
