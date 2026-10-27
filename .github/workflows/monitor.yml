@@ -11,6 +11,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,10 +24,8 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-    
       - name: Test detection and deduplication
         run: python test_monitor.py
-        
 
       - name: Check cinema
         env:
@@ -43,3 +42,4 @@ jobs:
             git commit -m "Save cinema alert state"
             git push
           fi
+          
