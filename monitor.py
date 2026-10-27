@@ -6,6 +6,8 @@ SITE = "https://tanta.galaxy-cinema.com/"
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
+TARGET = "avengers: doomsday"
+
 def notify(message):
     response = requests.post(
         f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -22,17 +24,46 @@ response = requests.get(
 response.raise_for_status()
 
 soup = BeautifulSoup(response.text, "html.parser")
-text = soup.get_text(" ", strip=True).lower()
+found_booking = False
 
-if "avengers: doomsday" in text and any(
-    word in text
-    for word in ["book now", "book tickets", "showtime"]
-):
-    notify(
-        "ظهر مؤشر محتمل لحجز Avengers: Doomsday في Galaxy Cinema Tanta. "
-        "افحص الرابط للتأكد من توفر التذاكر:\n" + SITE
-    )
-    print("Potential booking detected.")
+for heading in soup.find_all(["h1", "h2", "h3", "h4"]):
+    title = heading.get_text(" ", strip=True).lower()
+
+    if TARGET not in title:
+        continue
+
+    parent = heading
+
+    for _ in range(5):
+        if parent.parent is None:
+            break
+
+        parent = parent.parent
+        links = parent.find_all("a", href=True)
+        booking_links = [
+            link for link in links
+            if "book now" in link.get_text(" ", strip=True).lower()
+            or "book tickets" in link.get_text(" ", strip=True).lower()
+        ]
+
+        if booking_links:
+            link = booking_links[0]["href"]
+            if link.startswith("/"):
+                from urllib.parse import urljoin
+                link = urljoin(SITE, link)
+
+            notify(
+                "تم العثور على Avengers: Doomsday مع رابط حجز محتمل "
+                "في Galaxy Cinema Tanta.\n"
+                "تحقق من توفر التذاكر هنا:\n" + link
+            )
+            found_booking = True
+            break
+
+    if found_booking:
+        break
+
+if found_booking:
+    print("Potential booking link found.")
 else:
-    print("No booking indication detected.")
-  
+    print("No matching movie booking link found.")
