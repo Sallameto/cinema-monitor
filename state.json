@@ -1,4 +1,4 @@
 {
-  "appearance_sent": true,
-  "booking_sent": true
+  "coming_soon_sent": false,
+  "booking_sent": false
 }
