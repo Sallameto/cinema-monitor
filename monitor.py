@@ -13,7 +13,7 @@ def notify(message):
         timeout=20,
     )
     response.raise_for_status()
-
+notify("اختبار نجاح الاتصال: أداة مراقبة حجز السينما تعمل.")
 response = requests.get(
     SITE,
     headers={"User-Agent": "Mozilla/5.0"},
