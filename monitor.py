@@ -1,14 +1,17 @@
+import json
 import os
-import requests
-from bs4 import BeautifulSoup
+import re
+import unicodedata
+from pathlib import Path
 from urllib.parse import urljoin
 
+import requests
+from bs4 import BeautifulSoup
+
 BASE = "https://tanta.galaxy-cinema.com/"
-PAGES = [
-    BASE,
-    urljoin(BASE, "next_releasing"),
-]
-TARGET = "avengers: doomsday"
+COMING_SOON = urljoin(BASE, "next_releasing")
+STATE_FILE = Path("state.json")
+TARGET = "avengers doomsday"
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -16,71 +19,82 @@ CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
 
+def normalize(text):
+    text = unicodedata.normalize("NFKD", text).lower()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+def get_page(url):
+    response = session.get(url, timeout=30)
+    response.raise_for_status()
+    return BeautifulSoup(response.text, "html.parser")
+
+def movie_heading(soup):
+    for heading in soup.find_all(["h1", "h2", "h3", "h4"]):
+        if TARGET in normalize(heading.get_text(" ", strip=True)):
+            return heading
+    return None
+
+def booking_link(heading):
+    parent = heading
+    for _ in range(5):
+        if parent.parent is None:
+            break
+        parent = parent.parent
+
+        for link in parent.find_all("a", href=True):
+            label = normalize(link.get_text(" ", strip=True))
+            if label in ("book now", "book tickets"):
+                return urljoin(BASE, link["href"])
+    return None
+
 def notify(message):
-    r = session.post(
+    response = session.post(
         f"https://api.telegram.org/bot{TOKEN}/sendMessage",
         json={"chat_id": CHAT_ID, "text": message},
         timeout=20,
     )
-    r.raise_for_status()
-
-def find_movie(page_url):
-    response = session.get(page_url, timeout=30)
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
 
-    for heading in soup.find_all(["h1", "h2", "h3", "h4"]):
-        title = heading.get_text(" ", strip=True).lower()
+state = {"coming_soon_sent": False, "booking_sent": False}
 
-        if TARGET not in title:
-            continue
-
-        parent = heading
-
-        for _ in range(5):
-            if parent.parent is None:
-                break
-
-            parent = parent.parent
-
-            for link in parent.find_all("a", href=True):
-                label = link.get_text(" ", strip=True).lower()
-
-                if label in ("book now", "book tickets"):
-                    return {
-                        "title": heading.get_text(" ", strip=True),
-                        "booking_url": urljoin(
-                            page_url, link["href"]
-                        ),
-                    }
-
-        # Film is listed, but no nearby booking link was found.
-        return {
-            "title": heading.get_text(" ", strip=True),
-            "booking_url": None,
-        }
-
-    return None
-
-for page in PAGES:
+if STATE_FILE.exists():
     try:
-        result = find_movie(page)
+        state.update(json.loads(STATE_FILE.read_text()))
+    except (json.JSONDecodeError, OSError):
+        print("Could not read saved state; using defaults.")
 
-        if result and result["booking_url"]:
-            notify(
-                "Avengers: Doomsday ظهر مع رابط حجز محتمل "
-                "في Galaxy Cinema Tanta.\n"
-                + result["booking_url"]
-            )
-            print("Potential booking link found.")
-            break
+home = get_page(BASE)
+coming = get_page(COMING_SOON)
 
-        elif result:
-            print("Movie listed, but no booking link found:", page)
+home_heading = movie_heading(home)
+coming_heading = movie_heading(coming)
 
-        else:
-            print("Movie not found:", page)
+# Stage 1: movie appears in Coming Soon.
+if coming_heading and not state["coming_soon_sent"]:
+    notify(
+        "Avengers: Doomsday ظهر في Coming Soon على Galaxy Cinema Tanta:\n"
+        + COMING_SOON
+    )
+    state["coming_soon_sent"] = True
+    print("Coming Soon alert sent.")
+else:
+    print("No new Coming Soon alert.")
 
-    except Exception as error:
-        print(f"Could not check {page}: {error}")
-        
+# Stage 2: a booking link is associated with the movie.
+link = booking_link(home_heading) if home_heading else None
+
+if link and not state["booking_sent"]:
+    notify(
+        "ظهر رابط حجز محتمل لفيلم Avengers: Doomsday في Galaxy Cinema Tanta:\n"
+        + link
+    )
+    state["booking_sent"] = True
+    print("Booking alert sent.")
+else:
+    print("No new booking alert.")
+
+STATE_FILE.write_text(
+    json.dumps(state, indent=2),
+    encoding="utf-8",
+    )
